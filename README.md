@@ -3,6 +3,13 @@
 ![Built with Flutter](https://img.shields.io/badge/built%20with-Flutter-blue)
 ![Status](https://img.shields.io/badge/status-MVP%20Development-orange)
 
+## 🌍 Open Source Agriculture Platform
+
+AgriSmart is an open-source, mobile-first agriculture platform for India and other developing regions.
+It focuses on crop recommendation, farm task planning, weather-based advisories, and market price intelligence.
+
+**Keywords:** agritech, agriculture, farming, flutter, open-source, india, weather api, crop planning, mandi prices, rural tech
+
 🌾 AgriSmart — Smart Farming Assistant
 
 AgriSmart is a mobile-first agriculture super-app designed to guide farmers through the entire crop lifecycle—from crop selection to harvesting and selling—using data-driven insights and simple daily actions.
