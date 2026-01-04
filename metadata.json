@@ -1,0 +1,8 @@
+{
+  "name": "AgriSmart Mobile",
+  "description": "A smart farming companion app for real-time crop health analysis, market price tracking, and weather-driven irrigation management.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
