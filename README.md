@@ -1,20 +1,167 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+![Open Source](https://img.shields.io/badge/open--source-yes-brightgreen)
+![Platform](https://img.shields.io/badge/platform-android-green)
+![Built with Flutter](https://img.shields.io/badge/built%20with-Flutter-blue)
+![Status](https://img.shields.io/badge/status-MVP%20Development-orange)
 
-# Run and deploy your AI Studio app
+🌾 AgriSmart — Smart Farming Assistant
 
-This contains everything you need to run your app locally.
+AgriSmart is a mobile-first agriculture super-app designed to guide farmers through the entire crop lifecycle—from crop selection to harvesting and selling—using data-driven insights and simple daily actions.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1VmameTuY8SOAW4hahPBE49Wyk4h8Ijjr
+The platform integrates location, soil information, weather forecasts, and market prices to recommend the most suitable crops for a farmer’s land. Once a crop is selected, AgriSmart generates a stage-wise crop plan and delivers timely advisories for sowing, irrigation, fertilization, pest management, and harvesting.
 
-## Run Locally
+AgriSmart is built with an offline-first approach, optimized for low-bandwidth environments, and supports multiple Indian languages, making it accessible to farmers with limited internet access and digital literacy.
 
-**Prerequisites:**  Node.js
+🚀 Key Features
+
+🌱 Crop Recommendation Engine
+Suggests the best crops based on location, soil parameters, season, and weather forecast.
+
+📅 Crop Lifecycle Planning
+Auto-generated crop calendar with stage-wise guidance.
+
+✅ Daily Task & Advisory System
+Actionable reminders for farming activities.
+
+🌦️ Weather Intelligence
+Weather alerts translated into clear farming actions.
+
+💰 Market & Mandi Price Insights
+Nearby mandi prices, trends, and sell-decision support.
+
+📶 Offline-First Mobile Experience
+Access crop plans and tasks even without internet.
+
+🌐 Multi-Language Support
+Designed for Indian farmers (Hindi, Marathi, English).
+
+🎯 Problem Statement
+
+Farmers often rely on fragmented, delayed, or informal information when making crop and selling decisions. This results in:
+
+Poor crop selection
+
+Inefficient farm operations
+
+Higher risk from weather uncertainty
+
+Lower income due to unfavorable market timing
+
+💡 Solution
+
+AgriSmart unifies agronomy guidance, weather intelligence, and market insights into a single mobile platform that provides timely, practical, and easy-to-follow guidance, helping farmers:
+
+Choose the right crop
+
+Take the right action at the right time
+
+Sell produce at better prices
+
+🏗️ System Architecture (High Level)
+Mobile App (Flutter)
+      |
+      v
+Backend APIs (Planned)
+      |
+      v
+External Data Sources
+- Weather APIs
+- Soil Data
+- Mandi Price Data
 
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+The architecture is modular and designed to scale into an AI-enabled agriculture ecosystem.
+
+🛠️ Tech Stack
+Frontend
+
+Flutter (Android-first)
+
+Offline storage (SQLite / local cache)
+
+Multi-language support (i18n)
+
+Backend (Planned)
+
+REST APIs (FastAPI / Django)
+
+PostgreSQL (structured data)
+
+Redis (caching)
+
+Data Sources
+
+Weather APIs
+
+Government soil datasets
+
+Mandi / market price data
+
+🧪 MVP Scope
+
+The current MVP focuses on:
+
+Crop recommendations (rule-based)
+
+Crop lifecycle planning
+
+Daily task reminders
+
+Weather and market alerts
+
+Offline usability
+
+Advanced AI, direct marketplace integration, and financial services are planned for future phases.
+
+📦 Project Status
+
+🚧 Under Active Development (MVP Stage)
+
+This repository contains:
+
+Product design references
+
+UI/UX flows
+
+Initial Flutter implementation (in progress)
+
+## Screenshots
+
+<img width="431" height="842" alt="Screenshot 2026-01-05 030209" src="https://github.com/user-attachments/assets/cada0a22-b95f-411d-a409-7723a5376f73" />
+
+🗺️ Roadmap
+
+Phase 1: MVP pilot with limited crops and regions
+
+Phase 2: Multi-crop, multi-region expansion
+
+Phase 3: AI-driven advisory and ecosystem integrations
+
+🤝 Contributing
+
+Contributions are welcome!
+If you’d like to contribute:
+
+Fork the repository
+
+Create a feature branch
+
+Submit a pull request
+
+Please keep the code modular and well-documented.
+
+📄 License
+
+This project is currently under development.
+License details will be added before public release.
+
+📬 Contact
+
+For collaboration, feedback, or suggestions:
+
+Author: Omkar Deshmukh
+
+Location: India
+
+🌟 Vision
+
+To empower farmers with timely knowledge, confident decisions, and fair market access through simple and trusted digital tools.
