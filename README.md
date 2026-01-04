@@ -126,7 +126,10 @@ Initial Flutter implementation (in progress)
 
 ## Screenshots
 
-<img width="431" height="842" alt="Screenshot 2026-01-05 030209" src="https://github.com/user-attachments/assets/cada0a22-b95f-411d-a409-7723a5376f73" />
+<img width="216" height="432" alt="Screenshot 2026-01-05 030209" src="https://github.com/user-attachments/assets/cada0a22-b95f-411d-a409-7723a5376f73" />
+<img width="216" height="432" alt="Screenshot 2026-01-05 030319" src="https://github.com/user-attachments/assets/b355dde7-a6a8-4fc3-a0e4-849ccefa1d04" />
+<img width="216" height="432" alt="Screenshot 2026-01-05 030250" src="https://github.com/user-attachments/assets/23cb9fe8-cb0e-494c-acaa-e8e6aab9c090" />
+
 
 🗺️ Roadmap
 
