@@ -188,7 +188,7 @@ const App: React.FC = () => {
       case NavTab.MARKET: return <Market onNotify={addNotification} activeCrop={activeCrop} />;
       case NavTab.IRRIGATION: return <Irrigation onNotify={addNotification} />;
       case NavTab.COMMUNITY: return <Community onNotify={addNotification} activeCrop={activeCrop} />;
-      case NavTab.CROP_PLAN: return <CropPlan activeCrop={activeCrop} onNotify={addNotification} />;
+      case NavTab.CROP_PLAN: return <CropPlan activeCrop={activeCrop} onNotify={addNotification} profile={userProfile} />;
       case NavTab.NOTIFICATIONS: return (
         <Notifications notifications={notifications} onMarkRead={markAllAsRead} onRemove={removeNotification} onClearAll={clearAllNotifications} />
       );

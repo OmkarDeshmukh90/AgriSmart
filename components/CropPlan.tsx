@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { CropStage, FarmTask, TaskStatus } from '../types';
+import { CropStage, FarmTask, TaskStatus, FarmerProfile } from '../types';
 import { translations } from '../translations';
 import { storage } from '../utils/storage';
 
@@ -8,6 +8,7 @@ interface CropPlanProps {
   onNotify: (notif: { type: any; title: string; message: string }) => void;
   activeCrop: string | null;
   lang?: string;
+  profile?: FarmerProfile | null;
 }
 
 // Helper to format date relative to today
@@ -15,6 +16,12 @@ const getDate = (daysOffset: number): string => {
   const d = new Date();
   d.setDate(d.getDate() + daysOffset);
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+};
+
+const getLongDate = (daysOffset: number): string => {
+  const d = new Date();
+  d.setDate(d.getDate() + daysOffset);
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 };
 
 // Plan Data Types
@@ -138,23 +145,23 @@ const CROP_TEMPLATES: Record<string, PlanTemplate> = {
 // Fallback for unknown crops
 const DEFAULT_PLAN = CROP_TEMPLATES['Wheat'];
 
-const CropPlan: React.FC<CropPlanProps> = ({ onNotify, activeCrop, lang = 'en' }) => {
+const CropPlan: React.FC<CropPlanProps> = ({ onNotify, activeCrop, lang = 'en', profile }) => {
   const [view, setView] = useState<'overview' | 'calendar' | 'tasks'>('overview');
   const [taskView, setTaskView] = useState<'today' | 'history'>('today');
   const [stages, setStages] = useState<(CropStage & { thumb: string })[]>([]);
   const [tasks, setTasks] = useState<FarmTask[]>([]);
+  const [calDate, setCalDate] = useState(new Date());
+  const [selectedCalDate, setSelectedCalDate] = useState<Date | null>(new Date());
+  
   const t = translations[lang] || translations['en'];
 
   useEffect(() => {
     if (!activeCrop) return;
 
-    // Load tasks from offline storage if available
     const storageKey = `plan_tasks_${activeCrop}`;
     const savedTasks = storage.get<FarmTask[]>(storageKey);
-
     const template = CROP_TEMPLATES[activeCrop] || DEFAULT_PLAN;
     
-    // 1. Generate Stages
     const generatedStages = template.stages.map(s => {
         const isCompleted = s.startDay < 0; 
         const isActive = s.startDay === 0 || (s.startDay <= 10 && s.startDay >= 0); 
@@ -167,21 +174,15 @@ const CropPlan: React.FC<CropPlanProps> = ({ onNotify, activeCrop, lang = 'en' }
     });
     setStages(generatedStages);
 
-    // 2. Load Tasks (Stored vs Generated)
     if (savedTasks && savedTasks.length > 0) {
         setTasks(savedTasks);
     } else {
         const generatedTasks = template.tasks.map((task, index) => {
             const dateStr = getDate(task.dayOffset);
             let status = TaskStatus.PENDING;
-            
-            if (task.dayOffset < 0) {
-                 status = Math.random() > 0.4 ? TaskStatus.COMPLETED : TaskStatus.MISSED;
-            } else if (task.dayOffset === 0) {
-                 status = TaskStatus.PENDING;
-            } else {
-                 status = TaskStatus.UPCOMING;
-            }
+            if (task.dayOffset < 0) status = Math.random() > 0.4 ? TaskStatus.COMPLETED : TaskStatus.MISSED;
+            else if (task.dayOffset === 0) status = TaskStatus.PENDING;
+            else status = TaskStatus.UPCOMING;
             
             return {
                 id: `gen_${index}`,
@@ -195,15 +196,43 @@ const CropPlan: React.FC<CropPlanProps> = ({ onNotify, activeCrop, lang = 'en' }
         });
         setTasks(generatedTasks);
     }
-
   }, [activeCrop]);
 
-  // Save tasks to offline storage whenever they change
   useEffect(() => {
     if (activeCrop && tasks.length > 0) {
         storage.save(`plan_tasks_${activeCrop}`, tasks);
     }
   }, [tasks, activeCrop]);
+
+  const getFertilizerAdvice = () => {
+    if (!activeCrop || !stages.length) return null;
+    const activeStage = stages.find(s => s.status === 'active') || stages[0];
+    const soil = profile?.soil;
+    let advice = "";
+    let highlights = [];
+
+    if (activeStage.name.toLowerCase().includes('sowing') || activeStage.name.toLowerCase().includes('nursery')) {
+      advice = "Apply 50% Nitrogen and 100% Phosphorus/Potassium as basal dose.";
+    } else if (activeStage.name.toLowerCase().includes('root') || activeStage.name.toLowerCase().includes('tillering')) {
+      advice = "Critical growth stage: High Nitrogen demand. Top-dress with Urea.";
+    } else {
+      advice = "Focus on micronutrients (Zinc/Boron) to improve grain/fruit quality.";
+    }
+
+    if (soil) {
+      const n = parseInt(soil.n);
+      const p = parseInt(soil.p);
+      const k = parseInt(soil.k);
+      if (n < 280) highlights.push("Low N: Increase Urea by 15-20kg/acre.");
+      if (p < 12) highlights.push("Low P: Use DAP (Di-Ammonium Phosphate).");
+      if (k < 140) highlights.push("Low K: Supplement with MOP.");
+    } else {
+        highlights.push("No soil data available. Using regional averages.");
+    }
+    return { advice, highlights };
+  };
+
+  const fertilizerAdvisory = getFertilizerAdvice();
 
   if (!activeCrop) {
     return (
@@ -228,7 +257,6 @@ const CropPlan: React.FC<CropPlanProps> = ({ onNotify, activeCrop, lang = 'en' }
 
   const renderTodayTasks = () => {
     const todayTasks = tasks.filter(t => t.status === TaskStatus.PENDING || t.status === TaskStatus.REMIND);
-    
     if (todayTasks.length === 0) {
       return (
         <div className="text-center py-12 bg-white rounded-[32px] border border-neutral-100">
@@ -237,7 +265,6 @@ const CropPlan: React.FC<CropPlanProps> = ({ onNotify, activeCrop, lang = 'en' }
         </div>
       );
     }
-
     return (
       <div className="space-y-4">
         {todayTasks.map(task => (
@@ -255,22 +282,10 @@ const CropPlan: React.FC<CropPlanProps> = ({ onNotify, activeCrop, lang = 'en' }
                 <p className="text-xs font-black text-primary-600">{task.quantitySuggestion}</p>
               </div>
             </div>
-            
             <p className="text-sm text-neutral-500 font-medium leading-relaxed">{task.description}</p>
-            
             <div className="flex gap-3 pt-2">
-              <button 
-                onClick={() => handleTaskAction(task.id, TaskStatus.COMPLETED)}
-                className="flex-1 py-5 bg-neutral-900 text-white rounded-[28px] font-black text-lg shadow-xl active:scale-[0.98] transition-all"
-              >
-                {t.plan.mark_done}
-              </button>
-              <button 
-                onClick={() => handleTaskAction(task.id, TaskStatus.REMIND)}
-                className="flex-1 py-5 border-2 border-neutral-100 text-neutral-500 rounded-[28px] font-black text-lg active:scale-95 transition-all"
-              >
-                {t.plan.remind_later}
-              </button>
+              <button onClick={() => handleTaskAction(task.id, TaskStatus.COMPLETED)} className="flex-1 py-5 bg-neutral-900 text-white rounded-[28px] font-black text-lg shadow-xl active:scale-[0.98] transition-all">{t.plan.mark_done}</button>
+              <button onClick={() => handleTaskAction(task.id, TaskStatus.REMIND)} className="flex-1 py-5 border-2 border-neutral-100 text-neutral-500 rounded-[28px] font-black text-lg active:scale-95 transition-all">{t.plan.remind_later}</button>
             </div>
           </div>
         ))}
@@ -280,37 +295,115 @@ const CropPlan: React.FC<CropPlanProps> = ({ onNotify, activeCrop, lang = 'en' }
 
   const renderTaskHistory = () => {
     const historyTasks = tasks.filter(t => t.status === TaskStatus.COMPLETED || t.status === TaskStatus.MISSED);
-
-    if (historyTasks.length === 0) {
-        return (
-            <div className="text-center py-12">
-                <p className="text-neutral-400 font-bold text-sm">No history yet.</p>
-            </div>
-        )
-    }
-
+    if (historyTasks.length === 0) return <div className="text-center py-12"><p className="text-neutral-400 font-bold text-sm">No history yet.</p></div>;
     return (
       <div className="space-y-3">
         {historyTasks.map(task => (
           <div key={task.id} className={`rounded-2xl border p-4 flex items-center justify-between ${task.status === TaskStatus.MISSED ? 'bg-alert-50 border-alert-100' : 'bg-white border-neutral-50'}`}>
             <div className="flex items-center gap-4">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${task.status === TaskStatus.COMPLETED ? 'bg-primary-50 text-primary-600' : 'bg-alert-100 text-alert-600'}`}>
-                {task.status === TaskStatus.COMPLETED ? (
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                ) : (
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
-                )}
+                {task.status === TaskStatus.COMPLETED ? <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg> : <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>}
               </div>
               <div>
                 <h4 className={`text-sm font-black ${task.status === TaskStatus.MISSED ? 'text-alert-900' : 'text-neutral-800'}`}>{task.title}</h4>
                 <p className={`text-[10px] font-bold uppercase ${task.status === TaskStatus.MISSED ? 'text-alert-400' : 'text-neutral-400'}`}>{task.date}</p>
               </div>
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg ${task.status === TaskStatus.COMPLETED ? 'bg-primary-100 text-primary-700' : 'bg-alert-200 text-alert-700'}`}>
-              {task.status}
-            </span>
+            <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg ${task.status === TaskStatus.COMPLETED ? 'bg-primary-100 text-primary-700' : 'bg-alert-200 text-alert-700'}`}>{task.status}</span>
           </div>
         ))}
+      </div>
+    );
+  };
+
+  const renderCalendar = () => {
+    const year = calDate.getFullYear();
+    const month = calDate.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const monthName = calDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    const getTasksForDate = (date: Date) => {
+      const dateStr = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      return tasks.filter(t => t.date === dateStr);
+    };
+
+    const nextMonth = () => setCalDate(new Date(year, month + 1, 1));
+    const prevMonth = () => setCalDate(new Date(year, month - 1, 1));
+
+    const days = [];
+    for (let i = 0; i < firstDay; i++) days.push(<div key={`empty-${i}`} className="h-14"></div>);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateObj = new Date(year, month, d);
+      const dayTasks = getTasksForDate(dateObj);
+      const isSelected = selectedCalDate?.toDateString() === dateObj.toDateString();
+      const isToday = new Date().toDateString() === dateObj.toDateString();
+
+      days.push(
+        <button
+          key={d}
+          onClick={() => setSelectedCalDate(dateObj)}
+          className={`relative h-14 w-full flex flex-col items-center justify-center rounded-2xl transition-all active:scale-90 
+            ${isSelected ? 'bg-primary-500 text-white shadow-lg shadow-primary-200 scale-105 z-10' : isToday ? 'bg-neutral-100 text-neutral-900 font-black ring-2 ring-primary-500 ring-inset' : 'bg-white text-neutral-600 hover:bg-neutral-50'}`}
+        >
+          <span className="text-sm font-black">{d}</span>
+          <div className="flex gap-0.5 mt-1">
+            {dayTasks.map((t, idx) => (
+              <div key={idx} className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : t.category === 'irrigation' ? 'bg-blue-500' : t.category === 'fertilizer' ? 'bg-primary-500' : t.category === 'pesticide' ? 'bg-alert-500' : 'bg-warning-500'}`}></div>
+            ))}
+          </div>
+        </button>
+      );
+    }
+
+    const selectedTasks = selectedCalDate ? getTasksForDate(selectedCalDate) : [];
+
+    return (
+      <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
+        <div className="bg-white rounded-[40px] p-6 border border-neutral-100 shadow-xl shadow-neutral-200/40">
+          <div className="flex items-center justify-between mb-8 px-2">
+            <h3 className="text-lg font-black text-neutral-900">{monthName}</h3>
+            <div className="flex gap-2">
+              <button onClick={prevMonth} className="p-2.5 bg-neutral-50 rounded-xl text-neutral-400 hover:text-neutral-600 active:scale-95 transition-all"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg></button>
+              <button onClick={nextMonth} className="p-2.5 bg-neutral-50 rounded-xl text-neutral-400 hover:text-neutral-600 active:scale-95 transition-all"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg></button>
+            </div>
+          </div>
+          <div className="grid grid-cols-7 gap-1 mb-4">
+            {dayLabels.map(l => <div key={l} className="text-[10px] font-black text-neutral-300 uppercase text-center tracking-widest">{l}</div>)}
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {days}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex justify-between items-center px-1">
+            <h4 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Activities for {selectedCalDate?.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</h4>
+            <span className="text-[9px] font-bold text-primary-600 uppercase bg-primary-50 px-2 py-0.5 rounded-md">{selectedTasks.length} {selectedTasks.length === 1 ? 'Task' : 'Tasks'}</span>
+          </div>
+          {selectedTasks.length > 0 ? (
+            <div className="space-y-3">
+              {selectedTasks.map(t => (
+                <div key={t.id} className="bg-white p-5 rounded-3xl border border-neutral-100 shadow-sm flex items-center gap-4 animate-in slide-in-from-bottom-2">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner
+                    ${t.category === 'irrigation' ? 'bg-blue-50 text-blue-500' : t.category === 'fertilizer' ? 'bg-primary-50 text-primary-500' : t.category === 'pesticide' ? 'bg-alert-50 text-alert-500' : 'bg-warning-50 text-warning-500'}`}>
+                    {t.category === 'irrigation' ? '💧' : t.category === 'fertilizer' ? '🧪' : t.category === 'pesticide' ? '🛡️' : '🌾'}
+                  </div>
+                  <div className="flex-1">
+                    <h5 className="font-black text-neutral-900 text-sm">{t.title}</h5>
+                    <p className="text-[10px] text-neutral-400 font-bold uppercase">{t.category} • {t.quantitySuggestion}</p>
+                  </div>
+                  <button onClick={() => setView('tasks')} className="p-2 text-neutral-300"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg></button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-8 text-center bg-neutral-50 rounded-[32px] border border-dashed border-neutral-200">
+               <p className="text-neutral-400 font-bold text-xs uppercase tracking-widest">No activities scheduled</p>
+            </div>
+          )}
+        </div>
       </div>
     );
   };
@@ -320,163 +413,73 @@ const CropPlan: React.FC<CropPlanProps> = ({ onNotify, activeCrop, lang = 'en' }
 
   return (
     <div className="space-y-6 py-4 pb-12 animate-in fade-in duration-500">
-      <div className="text-center space-y-5">
+      <div className="text-center space-y-4">
         <div>
-          <h2 className="text-3xl font-black text-neutral-900 tracking-tight">{activeCrop}</h2>
-          <p className="text-xs text-neutral-400 font-black uppercase tracking-[0.2em]">{template.duration} {t.plan.days} Full Cycle</p>
+          <h2 className="text-4xl font-black text-neutral-900 tracking-tight leading-none mb-1">{activeCrop}</h2>
+          <p className="text-[10px] text-neutral-400 font-black uppercase tracking-[0.2em]">{template.duration} {t.plan.days} Full Cycle</p>
         </div>
-
-        <div className="flex bg-neutral-100 p-1.5 rounded-2xl mx-2">
-          <button 
-            onClick={() => setView('overview')}
-            className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${view === 'overview' ? 'bg-white text-primary-600 shadow-sm' : 'text-neutral-500'}`}
-          >
-            {t.plan.tabs.overview}
-          </button>
-          <button 
-            onClick={() => setView('calendar')}
-            className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${view === 'calendar' ? 'bg-white text-primary-600 shadow-sm' : 'text-neutral-500'}`}
-          >
-            {t.plan.tabs.calendar}
-          </button>
-          <button 
-            onClick={() => setView('tasks')}
-            className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${view === 'tasks' ? 'bg-white text-primary-600 shadow-sm' : 'text-neutral-500'}`}
-          >
-            {t.plan.tabs.tasks}
-          </button>
+        <div className="flex bg-neutral-100 p-1.5 rounded-3xl mx-2 shadow-inner border border-neutral-200/50">
+          <button onClick={() => setView('overview')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all ${view === 'overview' ? 'bg-white text-primary-600 shadow-lg shadow-neutral-200/50 scale-[1.02]' : 'text-neutral-500 hover:text-neutral-700'}`}>{t.plan.tabs.overview}</button>
+          <button onClick={() => setView('calendar')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all ${view === 'calendar' ? 'bg-white text-primary-600 shadow-lg shadow-neutral-200/50 scale-[1.02]' : 'text-neutral-500 hover:text-neutral-700'}`}>{t.plan.tabs.calendar}</button>
+          <button onClick={() => setView('tasks')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all ${view === 'tasks' ? 'bg-white text-primary-600 shadow-lg shadow-neutral-200/50 scale-[1.02]' : 'text-neutral-500 hover:text-neutral-700'}`}>{t.plan.tabs.tasks}</button>
         </div>
       </div>
 
       {view === 'overview' ? (
         <div className="space-y-6 animate-in slide-in-from-left-4 duration-500">
-          <div className="bg-white rounded-[32px] p-8 border border-neutral-100 shadow-xl shadow-neutral-200/40 relative overflow-hidden">
-            <img 
-              src="https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&q=80&w=400" 
-              className="absolute inset-0 w-full h-full object-cover opacity-[0.03] scale-150"
-              alt="bg"
-            />
-            <div className="relative z-10 flex flex-col items-center gap-8">
-              <div className="relative w-44 h-44">
-                <svg className="w-full h-full -rotate-90">
-                  <circle cx="88" cy="88" r="78" fill="none" stroke="#f1f5f9" strokeWidth="12" />
-                  <circle 
-                    cx="88" cy="88" r="78" 
-                    fill="none" stroke="#10b981" 
-                    strokeWidth="12"
-                    strokeDasharray="490"
-                    strokeDashoffset={490 - (490 * 0.05)} // Assuming 5% progress for new plan
-                    strokeLinecap="round"
-                    className="transition-all duration-1000"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-5xl font-black text-neutral-900">5%</span>
-                  <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">{t.plan.complete}</span>
+          <div className="bg-white rounded-[40px] p-8 border border-neutral-100 shadow-2xl shadow-neutral-200/40 space-y-8">
+            <div className="flex justify-between items-start">
+                <div className="space-y-1">
+                    <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Est. Harvest Window</p>
+                    <h3 className="text-2xl font-black text-neutral-900 leading-tight">{getLongDate(template.duration - 5)}</h3>
                 </div>
-              </div>
-
-              <div className="w-full grid grid-cols-2 gap-4">
-                <div className="bg-neutral-50 p-4 rounded-2xl border border-neutral-100">
-                  <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-1">{t.plan.elapsed}</p>
-                  <p className="text-xl font-black text-neutral-800">5 <span className="text-xs font-bold text-neutral-400">{t.plan.days}</span></p>
+                <div className="w-12 h-12 bg-primary-50 rounded-2xl flex items-center justify-center text-2xl shadow-inner">🏁</div>
+            </div>
+            <div className="space-y-4">
+                <div className="flex justify-between items-center px-1">
+                    <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Growth Journey</p>
+                    <span className="text-[10px] font-black text-primary-600 uppercase tracking-widest bg-primary-50 px-2 py-0.5 rounded-md">Healthy Crop</span>
                 </div>
-                <div className="bg-neutral-50 p-4 rounded-2xl border border-neutral-100">
-                  <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-1">{t.plan.remaining}</p>
-                  <p className="text-xl font-black text-neutral-800">{template.duration - 5} <span className="text-xs font-bold text-neutral-400">{t.plan.days}</span></p>
+                <div className="relative h-12 flex items-center">
+                    <div className="absolute inset-0 top-1/2 -translate-y-1/2 h-1.5 bg-neutral-100 rounded-full w-full"></div>
+                    <div className="absolute inset-0 top-1/2 -translate-y-1/2 h-1.5 bg-primary-500 rounded-full w-[5%] shadow-[0_0_10px_rgba(16,185,129,0.3)]"></div>
+                    <div className="relative w-full flex justify-between">
+                        {template.stages.map((s, idx) => (
+                            <div key={s.id} className="relative flex flex-col items-center">
+                                <div className={`w-8 h-8 rounded-full border-4 border-white shadow-md flex items-center justify-center transition-all duration-700 ${idx === 0 ? 'bg-primary-500 scale-110' : 'bg-neutral-200'}`}><span className="text-xs">{s.icon}</span></div>
+                                <span className={`absolute -bottom-6 text-[8px] font-black uppercase tracking-tighter whitespace-nowrap ${idx === 0 ? 'text-primary-700' : 'text-neutral-400'}`}>{s.nameKey}</span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
-              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4 pt-4">
+              <div className="bg-neutral-50/80 p-5 rounded-[28px] border border-neutral-100"><p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-1">Days Passed</p><p className="text-2xl font-black text-neutral-900">5 <span className="text-[10px] font-bold text-neutral-400">of {template.duration}</span></p></div>
+              <div className="bg-neutral-50/80 p-5 rounded-[28px] border border-neutral-100"><p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-1">Yield Factor</p><p className="text-2xl font-black text-primary-600">92% <span className="text-[10px] font-bold text-neutral-400 uppercase">Optimal</span></p></div>
             </div>
           </div>
-
-          <div className="p-6 bg-primary-600 rounded-[32px] text-white shadow-xl shadow-primary-200 flex items-center gap-5">
-            <img 
-              src={activeStage?.thumb} 
-              className="w-16 h-16 rounded-2xl object-cover border-2 border-white/20 shadow-lg"
-              alt="Active"
-            />
-            <div>
-              <h3 className="font-black text-lg">{activeStage?.name || 'Sowing'}</h3>
-              <p className="text-xs text-primary-100/90 font-medium">{activeStage?.description}</p>
+          {fertilizerAdvisory && (
+            <div className="bg-warning-50 border-2 border-warning-100/50 rounded-[40px] p-8 shadow-sm relative overflow-hidden group">
+                <div className="absolute -top-10 -right-10 w-32 h-32 bg-warning-200/20 blur-3xl rounded-full group-hover:scale-125 transition-transform duration-1000"></div>
+                <div className="flex items-center gap-4 mb-4">
+                    <div className="w-12 h-12 bg-warning-500 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-warning-200/50"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg></div>
+                    <h4 className="text-xs font-black text-warning-800 uppercase tracking-[0.15em]">Fertilizer Advisory</h4>
+                </div>
+                <p className="text-lg font-black text-warning-900 leading-tight mb-5">{fertilizerAdvisory.advice}</p>
+                <div className="space-y-3">{fertilizerAdvisory.highlights.map((h, i) => (<div key={i} className="flex items-start gap-3 bg-white/60 p-4 rounded-2xl border border-warning-200/30"><span className="text-warning-600 text-lg mt-0.5">•</span><p className="text-sm font-bold text-warning-800 leading-relaxed">{h}</p></div>))}</div>
             </div>
+          )}
+          <div className="p-8 bg-primary-600 rounded-[40px] text-white shadow-2xl shadow-primary-200 flex items-center gap-6 group active:scale-[0.98] transition-all">
+            <div className="relative"><img src={activeStage?.thumb} className="w-20 h-20 rounded-[28px] object-cover border-4 border-white/20 shadow-2xl group-hover:scale-105 transition-transform" alt="Active" /><span className="absolute -bottom-1 -right-1 bg-white rounded-full p-1 shadow-lg"><span className="flex h-3 w-3 rounded-full bg-primary-500 animate-pulse"></span></span></div>
+            <div className="flex-1"><p className="text-[10px] font-black text-primary-100 uppercase tracking-widest mb-1 opacity-80">{t.plan.growth_stage}</p><h3 className="font-black text-2xl leading-none">{activeStage?.name || 'Sowing'}</h3><p className="text-xs text-primary-100/90 font-medium mt-1.5 line-clamp-2">{activeStage?.description}</p></div>
           </div>
-          
-          <button 
-            onClick={() => setView('tasks')}
-            className="w-full p-6 bg-neutral-900 rounded-[32px] text-white flex items-center justify-between"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-primary-500 rounded-xl flex items-center justify-center">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
-              </div>
-              <div className="text-left">
-                <h4 className="font-black text-sm">{tasks.filter(t => t.status === TaskStatus.PENDING).length} {t.plan.pending_tasks}</h4>
-                <p className="text-[10px] text-neutral-400 uppercase tracking-widest">Next: {tasks.find(t => t.status === TaskStatus.PENDING)?.title || 'Check status'}</p>
-              </div>
-            </div>
-            <svg className="w-5 h-5 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg>
-          </button>
+          <button onClick={() => setView('tasks')} className="w-full p-8 bg-neutral-900 rounded-[40px] text-white flex items-center justify-between shadow-2xl shadow-neutral-900/20 active:scale-[0.98] transition-all"><div className="flex items-center gap-5"><div className="w-14 h-14 bg-primary-500 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-primary-500/20"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg></div><div className="text-left"><h4 className="font-black text-lg">{tasks.filter(t => t.status === TaskStatus.PENDING).length} {t.plan.pending_tasks}</h4><p className="text-[10px] text-neutral-400 font-bold uppercase tracking-widest mt-0.5">Next: {tasks.find(t => t.status === TaskStatus.PENDING)?.title || 'All caught up'}</p></div></div><svg className="w-6 h-6 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg></button>
         </div>
       ) : view === 'calendar' ? (
-        <div className="px-1 space-y-6 animate-in slide-in-from-right-4 duration-500">
-          <h3 className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.2em] px-2">{t.plan.roadmap}</h3>
-          <div className="relative pl-8 space-y-10">
-            <div className="absolute left-8 top-8 bottom-8 w-1 bg-neutral-100 -translate-x-1/2 rounded-full"></div>
-            
-            {stages.map((stage, idx) => (
-              <div key={stage.id} className="relative">
-                <div className={`absolute left-0 top-0 w-10 h-10 rounded-2xl border-4 border-white flex items-center justify-center -translate-x-1/2 z-10 shadow-lg transition-all
-                  ${stage.status === 'completed' ? 'bg-primary-500' : stage.status === 'active' ? 'bg-primary-600 scale-125' : 'bg-neutral-200'}`}>
-                  {stage.status === 'completed' ? (
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                  ) : (
-                    <span className={`text-[11px] font-black ${stage.status === 'active' ? 'text-white' : 'text-neutral-400'}`}>{idx + 1}</span>
-                  )}
-                </div>
-
-                <div className={`ml-10 rounded-[32px] overflow-hidden border transition-all ${stage.status === 'active' ? 'bg-white border-primary-500 shadow-2xl shadow-primary-500/10' : 'bg-white border-neutral-100'}`}>
-                  <div className="h-32 relative">
-                    <img src={stage.thumb} className="w-full h-full object-cover" alt={stage.name} />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-                    <div className="absolute bottom-4 left-5">
-                      <h4 className="font-black text-white text-lg">{stage.name}</h4>
-                      <p className="text-[10px] font-black text-white/80 uppercase tracking-widest">{stage.duration}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="p-5 space-y-4">
-                    <p className="text-xs text-neutral-500 font-medium leading-relaxed">{stage.description}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {stage.tasks.map((task, i) => (
-                        <span key={i} className="text-[9px] font-black px-3 py-1.5 bg-neutral-50 text-neutral-400 rounded-lg uppercase tracking-wider">
-                          {task}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        renderCalendar()
       ) : (
-        /* TASK MANAGEMENT VIEW */
         <div className="space-y-6 animate-in zoom-in-95 duration-500">
-          <div className="flex bg-neutral-100 p-1.5 rounded-2xl mx-1 shadow-inner">
-            <button 
-              onClick={() => setTaskView('today')}
-              className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${taskView === 'today' ? 'bg-white text-primary-600 shadow-sm' : 'text-neutral-500'}`}
-            >
-              {t.plan.today}
-            </button>
-            <button 
-              onClick={() => setTaskView('history')}
-              className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${taskView === 'history' ? 'bg-white text-primary-600 shadow-sm' : 'text-neutral-500'}`}
-            >
-              {t.plan.history}
-            </button>
-          </div>
-
+          <div className="flex bg-neutral-100 p-1.5 rounded-2xl mx-1 shadow-inner"><button onClick={() => setTaskView('today')} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${taskView === 'today' ? 'bg-white text-primary-600 shadow-sm' : 'text-neutral-500'}`}>{t.plan.today}</button><button onClick={() => setTaskView('history')} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${taskView === 'history' ? 'bg-white text-primary-600 shadow-sm' : 'text-neutral-500'}`}>{t.plan.history}</button></div>
           {taskView === 'today' ? renderTodayTasks() : renderTaskHistory()}
         </div>
       )}

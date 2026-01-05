@@ -1,7 +1,10 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { FarmerProfile } from '../types';
 import { translations } from '../translations';
+
+// Explicitly declaring Leaflet since it's loaded via CDN
+declare const L: any;
 
 interface ProfileSetupProps {
   onComplete: (profile: FarmerProfile) => void;
@@ -21,8 +24,9 @@ const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, lang = 'en' }) 
     soil: { n: '', p: '', k: '', ph: '', cardImage: null }
   });
   const [isDetectingLocation, setIsDetectingLocation] = useState(false);
-  const [locationDetected, setLocationDetected] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<any>(null);
   
   const t = translations[lang] || translations['en'];
 
@@ -52,23 +56,30 @@ const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, lang = 'en' }) 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          
+          setProfile(prev => ({
+            ...prev,
+            location: { lat, lng }
+          }));
+
+          // Mock reverse geocoding to village name
           setTimeout(() => {
-            const mockCity = "Hinjewadi, Pune"; 
-            setProfile({
-              ...profile,
-              village: profile.village || mockCity, 
-              location: {
-                lat: position.coords.latitude,
-                lng: position.coords.longitude
-              }
-            });
-            setLocationDetected(true);
+            setProfile(prev => ({
+              ...prev,
+              village: prev.village || "Hinjewadi Village"
+            }));
             setIsDetectingLocation(false);
-          }, 1500);
+          }, 1000);
+
+          if (mapInstanceRef.current) {
+            mapInstanceRef.current.setView([lat, lng], 16);
+          }
         },
         (error) => {
           console.error("Error detecting location:", error);
-          alert("Could not detect location. Using default coordinates.");
+          alert("Could not detect location. Please check permissions.");
           setIsDetectingLocation(false);
         },
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -79,32 +90,67 @@ const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, lang = 'en' }) 
     }
   };
 
+  useEffect(() => {
+    if (step === 4 && mapContainerRef.current && !mapInstanceRef.current) {
+      setTimeout(() => {
+        const initialLat = profile.location?.lat || 18.5204;
+        const initialLng = profile.location?.lng || 73.8567;
+
+        mapInstanceRef.current = L.map(mapContainerRef.current, {
+          center: [initialLat, initialLng],
+          zoom: 16,
+          zoomControl: false,
+          attributionControl: false
+        });
+
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 19
+        }).addTo(mapInstanceRef.current);
+
+        mapInstanceRef.current.on('move', () => {
+          const center = mapInstanceRef.current.getCenter();
+          setProfile(prev => ({
+            ...prev,
+            location: { lat: center.lat, lng: center.lng }
+          }));
+        });
+      }, 100);
+    }
+
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, [step]);
+
   const renderStep = () => {
     switch (step) {
       case 1:
         return (
           <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
             <div className="space-y-2 text-center">
-              <h2 className="text-3xl font-black text-neutral-900 leading-tight">{t.setup.step1.title}</h2>
-              <p className="text-neutral-500 font-medium">{t.setup.step1.subtitle}</p>
+              <h2 className="text-3xl font-black text-neutral-900 leading-tight">Let's get started</h2>
+              <p className="text-neutral-500 font-medium">Tell us a bit about yourself to personalize your experience.</p>
             </div>
             
-            <div className="space-y-6">
+            <div className="space-y-6 pt-4">
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-neutral-400 uppercase tracking-widest ml-1">{t.setup.step1.name}</label>
+                <label className="text-[11px] font-black text-neutral-400 uppercase tracking-[0.15em] ml-1">FULL NAME</label>
                 <input 
                   type="text"
                   placeholder="e.g. Rahul Sharma"
                   value={profile.name}
                   onChange={e => setProfile({...profile, name: e.target.value})}
-                  className="w-full px-6 py-5 bg-neutral-50 border-2 border-neutral-100 rounded-[24px] focus:border-primary-500 focus:bg-white transition-all outline-none text-neutral-900 font-bold text-lg"
+                  className="w-full px-6 py-5 bg-neutral-100 border-none rounded-[24px] focus:ring-2 focus:ring-primary-500 focus:bg-white transition-all outline-none text-neutral-900 font-bold text-lg placeholder:text-neutral-300"
                 />
               </div>
 
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-neutral-400 uppercase tracking-widest ml-1">{t.setup.step1.village}</label>
+                <label className="text-[11px] font-black text-neutral-400 uppercase tracking-[0.15em] ml-1">YOUR VILLAGE</label>
                 <div className="relative group">
-                  <div className="absolute left-5 top-1/2 -translate-y-1/2 flex items-center justify-center w-10 h-10 rounded-xl bg-alert-50 border border-alert-100 shadow-sm">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center justify-center w-10 h-10 rounded-xl bg-white border border-neutral-100 shadow-sm z-10">
                     <svg className="w-5 h-5 text-alert-500" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
                     </svg>
@@ -114,19 +160,16 @@ const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, lang = 'en' }) 
                     placeholder="Search your village..."
                     value={profile.village}
                     onChange={e => setProfile({...profile, village: e.target.value})}
-                    className="w-full px-6 py-5 pl-20 bg-neutral-50 border-2 border-neutral-100 rounded-[24px] focus:border-primary-500 focus:bg-white transition-all outline-none text-neutral-900 font-bold text-lg placeholder:font-medium placeholder:text-neutral-300"
+                    className="w-full py-5 pl-16 pr-24 bg-neutral-100 border-none rounded-[24px] focus:ring-2 focus:ring-primary-500 focus:bg-white transition-all outline-none text-neutral-900 font-bold text-lg placeholder:font-medium placeholder:text-neutral-300"
                   />
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10">
                     <button 
                       onClick={detectLocation}
                       disabled={isDetectingLocation}
-                      className="text-[10px] font-black uppercase text-primary-600 tracking-wider bg-white border border-primary-100 px-3 py-2 rounded-xl shadow-sm hover:bg-primary-50 active:scale-95 transition-all flex items-center gap-1"
+                      className="text-[10px] font-black uppercase text-primary-600 tracking-wider bg-white border border-neutral-200 px-3 py-2 rounded-xl shadow-sm hover:bg-primary-50 active:scale-95 transition-all flex items-center gap-1"
                     >
                       {isDetectingLocation ? (
-                        <>
-                          <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                          Detecting
-                        </>
+                        <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                       ) : (
                         'DETECT'
                       )}
@@ -146,7 +189,6 @@ const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, lang = 'en' }) 
             </div>
 
             <div className="space-y-8">
-              {/* Land Size */}
               <div className="space-y-3">
                 <div className="flex justify-between items-end px-1">
                   <label className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">{t.setup.step2.size}</label>
@@ -174,7 +216,6 @@ const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, lang = 'en' }) 
                 />
               </div>
 
-              {/* Source of Water */}
               <div className="space-y-4">
                 <label className="text-[10px] font-black text-neutral-400 uppercase tracking-widest ml-1">{t.setup.step2.source}</label>
                 <div className="grid grid-cols-2 gap-3">
@@ -198,7 +239,6 @@ const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, lang = 'en' }) 
                 </div>
               </div>
 
-              {/* Irrigation Type */}
               <div className="space-y-4">
                 <label className="text-[10px] font-black text-neutral-400 uppercase tracking-widest ml-1">{t.setup.step2.type}</label>
                 <div className="grid grid-cols-2 gap-3">
@@ -224,37 +264,38 @@ const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, lang = 'en' }) 
             </div>
           </div>
         );
-      case 3: // Soil Step
+      case 3:
         return (
           <div className="space-y-8 animate-in slide-in-from-right-8 duration-500 max-h-[70vh] overflow-y-auto pb-6 pr-1 no-scrollbar">
             <div className="space-y-2 text-center">
-              <h2 className="text-3xl font-black text-neutral-900 leading-tight">{t.setup.step3.title}</h2>
-              <p className="text-neutral-500 font-medium">{t.setup.step3.subtitle}</p>
+              <h2 className="text-3xl font-black text-neutral-900 leading-tight">Soil Health</h2>
+              <p className="text-neutral-500 font-medium">Enter soil test values or upload a Health Card.</p>
             </div>
 
-            <div className="space-y-8">
-              {/* Photo Upload */}
+            <div className="space-y-6">
+              {/* Modern Upload Card */}
               <div 
                 onClick={() => fileInputRef.current?.click()}
-                className={`relative w-full aspect-video rounded-3xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all active:scale-[0.98]
-                  ${profile.soil?.cardImage ? 'border-transparent shadow-xl' : 'border-primary-200 bg-primary-50 hover:bg-primary-100/50'}`}
+                className={`relative group w-full aspect-video rounded-[32px] border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all active:scale-[0.98]
+                  ${profile.soil?.cardImage ? 'border-transparent shadow-xl' : 'border-primary-200 bg-primary-50/50 hover:bg-primary-50'}`}
               >
                 {profile.soil?.cardImage ? (
-                  <>
-                    <img src={profile.soil.cardImage} alt="Soil Card" className="w-full h-full object-cover rounded-3xl" />
-                    <div className="absolute inset-0 bg-black/30 rounded-3xl flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                      <p className="text-white font-bold text-sm">Tap to change</p>
+                  <div className="relative w-full h-full">
+                    <img src={profile.soil.cardImage} className="w-full h-full object-cover rounded-[30px]" alt="Soil Card" />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-[30px]">
+                      <p className="text-white font-black text-sm uppercase tracking-widest">Change Photo</p>
                     </div>
-                  </>
+                  </div>
                 ) : (
-                  <div className="text-center p-6">
-                    <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-md">
-                      <svg className="w-8 h-8 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="text-center p-8">
+                    <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-xl border-4 border-primary-100 ring-8 ring-primary-50">
+                      <svg className="w-10 h-10 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                       </svg>
                     </div>
-                    <p className="font-black text-primary-700 text-sm">{t.setup.step3.upload_btn}</p>
+                    <p className="font-black text-primary-700 text-lg">Upload Soil Health Card</p>
+                    <p className="text-xs text-primary-400 font-bold uppercase tracking-widest mt-1">Tap to scan document</p>
                   </div>
                 )}
                 <input 
@@ -268,65 +309,65 @@ const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, lang = 'en' }) 
 
               <div className="flex items-center gap-4">
                 <div className="h-px bg-neutral-200 flex-1"></div>
-                <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">{t.setup.step3.or}</span>
+                <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">OR ENTER MANUALLY</span>
                 <div className="h-px bg-neutral-200 flex-1"></div>
               </div>
 
-              {/* Manual Inputs Grid */}
+              {/* Polished Manual Inputs */}
               <div className="grid grid-cols-2 gap-4">
                 {[
-                  { id: 'n', label: t.setup.step3.n, placeholder: '00' },
-                  { id: 'p', label: t.setup.step3.p, placeholder: '00' },
-                  { id: 'k', label: t.setup.step3.k, placeholder: '00' },
-                  { id: 'ph', label: t.setup.step3.ph, placeholder: '7.0' }
+                  { id: 'n', label: 'NITROGEN (N)', placeholder: '00', unit: 'kg/h', icon: '🧪' },
+                  { id: 'p', label: 'PHOSPHORUS (P)', placeholder: '00', unit: 'kg/h', icon: '🧪' },
+                  { id: 'k', label: 'POTASSIUM (K)', placeholder: '00', unit: 'kg/h', icon: '🧪' },
+                  { id: 'ph', label: 'pH LEVEL', placeholder: '7.0', unit: 'pH', icon: '⚖️' }
                 ].map(field => (
-                  <div key={field.id} className="space-y-1">
-                    <label className="text-[10px] font-black text-neutral-400 uppercase tracking-widest ml-1">{field.label}</label>
-                    <input 
-                      type="number"
-                      placeholder={field.placeholder}
-                      value={profile.soil?.[field.id as keyof typeof profile.soil] || ''}
-                      onChange={e => setProfile({...profile, soil: { ...profile.soil!, [field.id]: e.target.value }})}
-                      className="w-full px-4 py-3 bg-neutral-50 border-2 border-neutral-100 rounded-2xl focus:border-primary-500 focus:bg-white transition-all outline-none text-neutral-900 font-bold text-center"
-                    />
+                  <div key={field.id} className="bg-white p-4 rounded-3xl border border-neutral-100 shadow-sm space-y-2 group focus-within:ring-2 focus-within:ring-primary-500 transition-all">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[9px] font-black text-neutral-400 uppercase tracking-widest">{field.label}</label>
+                      <span className="text-sm opacity-40">{field.icon}</span>
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      <input 
+                        type="number"
+                        placeholder={field.placeholder}
+                        value={profile.soil?.[field.id as keyof typeof profile.soil] || ''}
+                        onChange={e => setProfile({...profile, soil: { ...profile.soil!, [field.id]: e.target.value }})}
+                        className="w-full text-xl font-black text-neutral-900 outline-none bg-transparent placeholder:text-neutral-200 tabular-nums"
+                      />
+                      <span className="text-[10px] font-black text-neutral-300">{field.unit}</span>
+                    </div>
                   </div>
                 ))}
               </div>
 
-              <div className="bg-neutral-50 p-4 rounded-2xl border border-neutral-100 text-center">
-                <p className="text-xs text-neutral-400 font-bold">{t.setup.step3.default_msg}</p>
+              <div className="p-4 bg-primary-50 rounded-2xl border border-primary-100 flex items-start gap-3">
+                <svg className="w-5 h-5 text-primary-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-xs text-primary-700 font-bold leading-relaxed">
+                  Missing data? Leave empty to use regional averages for {profile.village || 'your area'}.
+                </p>
               </div>
             </div>
           </div>
         );
       case 4:
         return (
-          <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
+          <div className="space-y-8 animate-in slide-in-from-right-8 duration-500 h-full flex flex-col">
             <div className="space-y-2 text-center">
-              <h2 className="text-3xl font-black text-neutral-900 leading-tight">{t.setup.step4.title}</h2>
-              <p className="text-neutral-500 font-medium">{t.setup.step4.subtitle}</p>
+              <h2 className="text-3xl font-black text-neutral-900 leading-tight">Confirm Location</h2>
+              <p className="text-neutral-500 font-medium">Pinpoint your farm for hyper-local weather alerts.</p>
             </div>
 
-            <div className="relative aspect-square rounded-[40px] overflow-hidden shadow-2xl group border-[6px] border-white ring-1 ring-neutral-200">
-              {/* Satellite Map View */}
-              <img 
-                src="https://images.unsplash.com/photo-1524813686514-a57563d77965?auto=format&fit=crop&q=80&w=800" 
-                className={`w-full h-full object-cover transition-all duration-1000 transform hover:scale-110 ${isDetectingLocation ? 'blur-sm' : ''}`}
-                alt="Satellite Map"
-              />
-              
-              {/* Map UI Overlays */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/10 pointer-events-none"></div>
-              
-              {/* Center Pin & Radar Effect */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center">
-                 <div className="w-4 h-4 bg-primary-500 rounded-full border-[3px] border-white shadow-lg z-10"></div>
-                 <div className="absolute w-32 h-32 bg-primary-500/20 rounded-full animate-ping"></div>
-                 <div className="absolute w-64 h-64 bg-primary-500/10 rounded-full animate-pulse"></div>
+            <div className="relative flex-1 rounded-[40px] overflow-hidden shadow-2xl group border-[6px] border-white ring-1 ring-neutral-200">
+              <div ref={mapContainerRef} className="w-full h-full bg-neutral-100" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/10 pointer-events-none z-[1000]"></div>
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center pointer-events-none z-[1001]">
+                 <div className="map-pulse"></div>
+                 <div className="w-1.5 h-1 bg-black/30 rounded-full blur-[1px] mt-1"></div>
               </div>
 
-              {/* Location Details Card Overlay */}
-              <div className="absolute bottom-6 left-6 right-6 bg-white/95 backdrop-blur-xl p-4 rounded-3xl shadow-xl flex items-center justify-between animate-in slide-in-from-bottom-6 duration-700">
+              <div className="absolute bottom-6 left-6 right-6 bg-white/95 backdrop-blur-xl p-4 rounded-3xl shadow-xl flex items-center justify-between z-[1002] border border-white/40">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-primary-500 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-primary-500/30">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -335,7 +376,7 @@ const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, lang = 'en' }) 
                     </svg>
                   </div>
                   <div>
-                    <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-0.5">Farm Location</p>
+                    <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-0.5">FARM LOCATION</p>
                     <p className="text-xs font-black text-neutral-800 tabular-nums">
                       Lat: {profile.location?.lat.toFixed(4)} | Lng: {profile.location?.lng.toFixed(4)}
                     </p>
@@ -343,22 +384,13 @@ const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, lang = 'en' }) 
                 </div>
                 <button 
                   onClick={detectLocation}
-                  className="p-2 text-primary-600 hover:bg-primary-50 rounded-xl transition-colors active:scale-95"
+                  className="p-3 bg-neutral-50 text-primary-600 rounded-xl transition-all active:scale-95 hover:bg-primary-50 shadow-inner"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
                 </button>
               </div>
-            </div>
-            
-            <div className="bg-warning-50 border border-warning-100 rounded-3xl p-5 flex gap-4 items-start">
-              <div className="w-8 h-8 rounded-full bg-warning-100 flex items-center justify-center flex-shrink-0 mt-0.5 text-warning-600">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <p className="text-xs text-warning-800 font-bold leading-relaxed">{t.setup.step4.warning}</p>
             </div>
           </div>
         );
@@ -369,7 +401,6 @@ const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, lang = 'en' }) 
 
   return (
     <div className="fixed inset-0 bg-white z-[150] flex flex-col pt-8">
-      {/* Step Indicator */}
       <div className="px-8 space-y-6">
         <div className="flex justify-between items-center">
           <button 
@@ -401,11 +432,11 @@ const ProfileSetup: React.FC<ProfileSetupProps> = ({ onComplete, lang = 'en' }) 
       <div className="px-8 py-8 border-t border-neutral-50 safe-bottom bg-white/80 backdrop-blur-md">
         <button 
           onClick={step === 4 ? handleComplete : nextStep}
-          disabled={step === 1 && !profile.village}
-          className={`w-full py-5 rounded-[28px] font-black text-lg shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-3
-            ${(step === 1 && !profile.village) ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-neutral-900 text-white shadow-neutral-300 hover:bg-neutral-800'}`}
+          disabled={step === 1 && !profile.name}
+          className={`w-full py-5 rounded-[32px] font-black text-lg shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-3
+            ${(step === 1 && !profile.name) ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed' : 'bg-neutral-900 text-white shadow-neutral-300 hover:bg-neutral-800'}`}
         >
-          <span>{step === 4 ? t.setup.btn_finish : t.setup.btn_continue}</span>
+          <span>{step === 4 ? 'Finish Setup' : 'Continue'}</span>
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 8l4 4m0 0l-4 4m4-4H3" />
           </svg>
